@@ -3,7 +3,8 @@ Query engine service for RAG-based question answering
 """
 from typing import Dict, Any, List, Optional
 import time
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.llms import Ollama
 from langchain.prompts import ChatPromptTemplate
 from app.core.config import settings
@@ -17,17 +18,17 @@ class QueryEngine:
     
     def __init__(self, db: Session):
         self.db = db
-        self.vector_store = VectorStore()
+        self.vector_store = VectorStore(db)
         self.metrics_calculator = MetricsCalculator(db)
         self.llm = self._initialize_llm()
     
     def _initialize_llm(self):
         """Initialize LLM"""
-        if settings.OPENAI_API_KEY:
-            return ChatOpenAI(
-                model=settings.OPENAI_MODEL,
-                temperature=0,
-                openai_api_key=settings.OPENAI_API_KEY
+        if settings.GOOGLE_API_KEY:
+            return ChatGoogleGenerativeAI(
+                model=settings.GEMINI_GENERATION_MODEL,
+                google_api_key=settings.GOOGLE_API_KEY,
+                temperature=0.0
             )
         else:
             # Fallback to local LLM
@@ -151,57 +152,64 @@ class QueryEngine:
             metrics_str = "\n\nAvailable Metrics:\n"
             for key, value in metrics.items():
                 if value is not None:
-                    metrics_str += f"- {key.upper()}: {value}\n"
+                    # Format value to 2 decimal places if it's a number
+                    formatted_value = f"{value:.2f}" if isinstance(value, (int, float)) else str(value)
+                    metrics_str += f"- {key.upper()}: {formatted_value}\n"
         
         # Build conversation history string
         history_str = ""
         if conversation_history:
             history_str = "\n\nPrevious Conversation:\n"
             for msg in conversation_history[-3:]:  # Last 3 messages
-                history_str += f"{msg['role']}: {msg['content']}\n"
-        
-        # Create prompt
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a financial analyst assistant specializing in private equity fund performance.
+                # Ensure role names are capitalized for clarity in the prompt text
+                role = "User" if msg.get('role', '').lower() == 'user' else "Assistant"
+                history_str += f"{role}: {msg.get('content', '')}\n"
+
+        # --- FIX: Combine System Instruction into the User Prompt ---
+        system_instruction = """You are a financial analyst assistant specializing in private equity fund performance.
 
 Your role:
-- Answer questions about fund performance using provided context
-- Calculate metrics like DPI, IRR when asked
-- Explain complex financial terms in simple language
-- Always cite your sources from the provided documents
-
-When calculating:
-- Use the provided metrics data
-- Show your work step-by-step
-- Explain any assumptions made
+- Answer questions about fund performance using provided context, metrics, and history.
+- Always use the provided metrics data when relevant.
+- Explain complex financial terms in simple language.
+- When citing document data, reference the source (e.g., [Source 1]).
+- If the answer cannot be found in the context or metrics, state that clearly and politely.
 
 Format your responses:
-- Be concise but thorough
-- Use bullet points for lists
-- Bold important numbers using **number**
-- Provide context for metrics"""),
-            ("user", """Context from documents:
-{context}
-{metrics}
-{history}
+- Be concise but thorough.
+- Use bullet points for lists.
+- Bold important numbers and financial terms."""
+        
+        # Use a single 'user' role message to deliver the entire context, history, and instructions
+        full_user_prompt = f"""{system_instruction}
+        
+Context from documents:
+{context_str}
+
+{metrics_str}
+
+{history_str}
 
 Question: {query}
 
-Please provide a helpful answer based on the context and metrics provided.""")
+Please provide a helpful answer based on the context and metrics provided."""
+
+        # Create prompt template with only a 'user' role placeholder
+        prompt = ChatPromptTemplate.from_messages([
+            ("user", "{full_prompt}")
         ])
         
-        # Generate response
+        # Generate messages for LLM invocation
         messages = prompt.format_messages(
-            context=context_str,
-            metrics=metrics_str,
-            history=history_str,
-            query=query
+            full_prompt=full_user_prompt
         )
         
         try:
+            # Invoke the LangChain LLM object
             response = self.llm.invoke(messages)
             if hasattr(response, 'content'):
                 return response.content
             return str(response)
         except Exception as e:
+            # Catches errors from the LLM service (like API key issues, context too long, etc.)
             return f"I apologize, but I encountered an error generating a response: {str(e)}"

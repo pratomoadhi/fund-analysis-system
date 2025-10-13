@@ -69,11 +69,11 @@ This repository contains a **project scaffold** to help you get started quickly:
 The following **core functionalities are NOT implemented** and need to be built by you:
 
 #### 1. Document Processing Pipeline (Phase 2) - **CRITICAL**
-- [ ] PDF parsing with pdfplumber (integrate and test)
-- [ ] Table detection and extraction logic
-- [ ] Intelligent table classification (capital calls vs distributions vs adjustments)
-- [ ] Data validation and cleaning
-- [ ] Error handling for malformed PDFs
+- [v] PDF parsing with pdfplumber (integrate and test)
+- [v] Table detection and extraction logic
+- [v] Intelligent table classification (capital calls vs distributions vs adjustments)
+- [v] Data validation and cleaning
+- [v] Error handling for malformed PDFs
 - [ ] Background task processing (Celery integration)
 
 **Files to implement:**
@@ -81,12 +81,12 @@ The following **core functionalities are NOT implemented** and need to be built 
 - `backend/app/services/table_parser.py` (needs implementation)
 
 #### 2. Vector Store & RAG System (Phase 3) - **CRITICAL**
-- [ ] Text chunking strategy implementation
-- [ ] embedding generation
-- [ ] FAISS index creation and management
-- [ ] Semantic search implementation
-- [ ] Context retrieval for LLM
-- [ ] Prompt engineering for accurate responses
+- [v] Text chunking strategy implementation
+- [v] embedding generation
+- [v] FAISS index creation and management
+- [v] Semantic search implementation
+- [v] Context retrieval for LLM
+- [v] Prompt engineering for accurate responses
 
 **Files to implement:**
 - `backend/app/services/vector_store.py` (pgvector implementation with TODOs)

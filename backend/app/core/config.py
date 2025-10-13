@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     
+    # Gemini
+    GOOGLE_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    GEMINI_GENERATION_MODEL : str = "gemini-2.5-flash"
+    GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
+    FALLBACK_EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
+    
     # Anthropic (optional)
     ANTHROPIC_API_KEY: str = ""
     

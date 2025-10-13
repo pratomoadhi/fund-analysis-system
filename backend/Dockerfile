@@ -16,6 +16,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Gemini Langchain
+RUN pip install langchain-google-genai==0.0.1
+
 # Copy application code
 COPY . .
 

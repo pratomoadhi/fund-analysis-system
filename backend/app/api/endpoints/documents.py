@@ -95,7 +95,7 @@ async def process_document_task(document_id: int, file_path: str, fund_id: int):
         db.commit()
         
         # Process document
-        processor = DocumentProcessor()
+        processor = DocumentProcessor(db=db)
         result = await processor.process_document(file_path, document_id, fund_id)
         
         # Update status
