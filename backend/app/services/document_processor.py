@@ -114,6 +114,8 @@ class DocumentProcessor:
                     if fund_data.get("name") and fund_data.get("gp_name"):
                         fund = self._get_or_create_fund(fund_data)
                         fund_id = fund.id
+                        document.fund_id = fund_id # Link document
+                        processing_stats["fund_id"] = fund_id
 
                 # Extract tables
                 if 'tables' in doc and isinstance(doc['tables'], list):
@@ -124,9 +126,6 @@ class DocumentProcessor:
                     processing_stats["calls_stored"] = self._store_capital_calls(fund_id, tables.get("capital_calls", {}).get("rows", []))
                     processing_stats["distributions_stored"] = self._store_distributions(fund_id, tables.get("distributions", {}).get("rows", []))
                     processing_stats["adjustments_stored"] = self._store_adjustments(fund_id, tables.get("adjustments", {}).get("rows", []))
-
-                document.fund_id = fund_id # Link document
-                processing_stats["fund_id"] = fund_id
                 
                 # Store chunks            
                 chunks_stored = await self._store_chunks(document.id, fund_id, text_chunks)
