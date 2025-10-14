@@ -16,6 +16,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Docling (CPU-only)
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    docling==2.55.1 docling-core==2.48.4
+
 # Install Gemini Langchain
 RUN pip install langchain-google-genai==0.0.1
 

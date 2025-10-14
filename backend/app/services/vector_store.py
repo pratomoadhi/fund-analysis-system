@@ -69,7 +69,7 @@ class VectorStore:
                 CREATE TABLE IF NOT EXISTS document_embeddings (
                     id SERIAL PRIMARY KEY,
                     document_id INTEGER NOT NULL,
-                    fund_id INTEGER NOT NULL,
+                    fund_id INTEGER,
                     content TEXT NOT NULL,
                     embedding vector({dimension}),
                     metadata JSONB,
@@ -102,9 +102,12 @@ class VectorStore:
             # 1. PASTE YOUR KEY HERE for testing. REMOVE IT before deployment.
             TEMP_DEV_API_KEY = settings.GOOGLE_API_KEY 
             
-            if TEMP_DEV_API_KEY:
-                print("--- WARNING: Using placeholder key. Please replace TEMP_DEV_API_KEY for testing. ---")
-                return np.zeros(config["dimension"], dtype=np.float32) # Return zeros if key is placeholder
+            if not TEMP_DEV_API_KEY:
+                print("--- ERROR: GOOGLE_API_KEY is missing for Gemini embedding. ---")
+                raise RuntimeError("Missing Gemini API Key.")
+
+            # --- CRITICAL FIX: Removed the buggy line that returned np.zeros() ---
+            print("DEBUG: Using Gemini API for query embedding.")
 
             # 2. Use the key as a query parameter (the simple method)
             api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{config['model_name']}:embedContent?key={TEMP_DEV_API_KEY}"

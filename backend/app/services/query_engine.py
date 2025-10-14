@@ -53,6 +53,9 @@ class QueryEngine:
         """
         start_time = time.time()
         
+        # Mockup fund id
+        fund_id = fund_id or 1
+        
         # Step 1: Classify query intent
         intent = await self._classify_intent(query)
         
@@ -105,14 +108,6 @@ class QueryEngine:
         """
         query_lower = query.lower()
         
-        # Calculation keywords
-        calc_keywords = [
-            "calculate", "what is the", "current", "dpi", "irr", "tvpi", 
-            "rvpi", "pic", "paid-in capital", "return", "performance"
-        ]
-        if any(keyword in query_lower for keyword in calc_keywords):
-            return "calculation"
-        
         # Definition keywords
         def_keywords = [
             "what does", "mean", "define", "explain", "definition", 
@@ -120,6 +115,14 @@ class QueryEngine:
         ]
         if any(keyword in query_lower for keyword in def_keywords):
             return "definition"
+        
+        # Calculation keywords
+        calc_keywords = [
+            "calculate", "what is the", "current", "dpi", "irr", "tvpi", 
+            "rvpi", "pic", "paid-in capital", "return", "performance"
+        ]
+        if any(keyword in query_lower for keyword in calc_keywords):
+            return "calculation"
         
         # Retrieval keywords
         ret_keywords = [

@@ -82,11 +82,11 @@ The following **core functionalities are NOT implemented** and need to be built 
 
 #### 2. Vector Store & RAG System (Phase 3) - **CRITICAL**
 - [v] Text chunking strategy implementation
-- [v] embedding generation
-- [v] FAISS index creation and management
+- [ ] embedding generation
+- [ ] FAISS index creation and management
 - [v] Semantic search implementation
 - [v] Context retrieval for LLM
-- [v] Prompt engineering for accurate responses
+- [ ] Prompt engineering for accurate responses
 
 **Files to implement:**
 - `backend/app/services/vector_store.py` (pgvector implementation with TODOs)
@@ -95,12 +95,12 @@ The following **core functionalities are NOT implemented** and need to be built 
 **Note**: This project uses **pgvector** instead of FAISS. pgvector is a PostgreSQL extension that stores vectors directly in your database, eliminating the need for a separate vector database.
 
 #### 3. Query Engine & Intent Classification (Phase 3-4) - **CRITICAL**
-- [ ] Intent classifier (calculation vs definition vs retrieval)
-- [ ] Query router logic
-- [ ] LLM integration 
-- [ ] Response formatting
-- [ ] Source citation
-- [ ] Conversation context management
+- [v] Intent classifier (calculation vs definition vs retrieval)
+- [v] Query router logic
+- [v] LLM integration 
+- [v] Response formatting
+- [v] Source citation
+- [v] Conversation context management
 
 **Files to implement:**
 - `backend/app/services/query_engine.py` (needs implementation)
@@ -241,31 +241,31 @@ CREATE TABLE documents (
 ## Required Features (Phase 1-4)
 
 ### Phase 1: Core Infrastructure
-- [ ] Docker setup with PostgreSQL, Redis
-- [ ] FastAPI backend with CRUD endpoints
-- [ ] Next.js frontend with basic layout
-- [ ] Database schema implementation
-- [ ] Environment configuration
+- [v] Docker setup with PostgreSQL, Redis
+- [v] FastAPI backend with CRUD endpoints
+- [v] Next.js frontend with basic layout
+- [v] Database schema implementation
+- [v] Environment configuration
 
 ### Phase 2: Document Processing
-- [ ] File upload API endpoint
-- [ ] Docling integration for PDF parsing
-- [ ] Table extraction and SQL storage
-- [ ] Text chunking and embedding
-- [ ] Parsing status tracking
+- [v] File upload API endpoint
+- [v] Docling integration for PDF parsing
+- [v] Table extraction and SQL storage
+- [v] Text chunking and embedding
+- [v] Parsing status tracking
 
 ### Phase 3: Vector Store & RAG
-- [ ] pgvector setup (PostgreSQL extension)
-- [ ] Embedding generation (OpenAI/local)
-- [ ] Similarity search using pgvector operators
-- [ ] LangChain integration
-- [ ] Basic chat interface
+- [v] pgvector setup (PostgreSQL extension)
+- [v] Embedding generation (OpenAI/local)
+- [v] Similarity search using pgvector operators
+- [v] LangChain integration
+- [v] Basic chat interface
 
 ### Phase 4: Fund Metrics Calculation
-- [ ] DPI calculation function
-- [ ] IRR calculation function
-- [ ] Metrics API endpoints
-- [ ] Query engine integration
+- [v] DPI calculation function
+- [v] IRR calculation function
+- [v] Metrics API endpoints
+- [v] Query engine integration
 
 ---
 

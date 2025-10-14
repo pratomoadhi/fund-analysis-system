@@ -1,5 +1,4 @@
-from typing import Dict, List, Any, Tuple
-import re
+from typing import Dict, List, Any
 from datetime import datetime
 
 class TableParser:
@@ -9,21 +8,8 @@ class TableParser:
     """
 
     def __init__(self):
-        # Define the set of required headers for each transaction type for classification
-        self.classification_schemas = {
-            "capital_calls": {"Date", "Call Number", "Amount", "Description"},
-            "distributions": {"Date", "Type", "Amount", "Recallable", "Description"},
-            "adjustments": {"Date", "Type", "Amount", "Description"},
-        }
         # Common date formats to try when parsing
         self.date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y", "%b %d, %Y"]
-        
-    def _clean_header(self, raw_header: str) -> str:
-        """Standardizes header strings by stripping whitespace and newlines."""
-        if raw_header is None:
-            return ""
-        # Replace newlines/tabs, strip leading/trailing space, and replace multiple spaces with single space
-        return re.sub(r'\s+', ' ', raw_header.strip().replace('\n', ' ').strip())
         
     def _clean_amount(self, raw_amount: str) -> float:
         """Removes currency symbols and commas, converting the result to a float."""
@@ -45,7 +31,7 @@ class TableParser:
         cleaned = cleaned.replace('$', '').replace(',', '').strip()
         
         if not cleaned:
-             return 0.0
+            return 0.0
 
         try:
             value = float(cleaned)
@@ -71,88 +57,74 @@ class TableParser:
                 
         # If no format matched, raise a definitive error
         raise ValueError(f"Date string '{date_str}' does not match any expected format.")
-
-
-    def _classify_table(self, headers: List[str]) -> str | None:
-        """Determines the type of transaction table based on its clean headers."""
-        
-        # Create a set of combined, cleaned header keywords for robust comparison
-        clean_headers_set = set()
-        for h in headers:
-            # We look for key words without spaces to make classification less sensitive to formatting
-            clean_headers_set.add(h.replace(" ", "").replace("_", "").lower())
-        
-        # Define keywords for comparison
-        capital_call_keywords = {"date", "callnumber", "amount", "description"}
-        distribution_keywords = {"date", "type", "amount", "recallable", "description"}
-        adjustment_keywords = {"date", "type", "amount", "description"}
-        
-        # 1. Distributions check (most specific)
-        if clean_headers_set.issuperset(distribution_keywords):
-            return "distributions"
-        
-        # 2. Capital Calls check
-        if clean_headers_set.issuperset(capital_call_keywords):
-            return "capital_calls"
-
-        # 3. Adjustments check
-        # Check if it has the core adjustment keywords but is not a distribution/call
-        if clean_headers_set.issuperset(adjustment_keywords) and not clean_headers_set.intersection({"callnumber", "recallable"}):
-            return "adjustments"
-            
-        return None # Unclassified
-
     
-    def parse_table(self, raw_data: List[List[str]], page_number: int = 1) -> Tuple[str | None, List[Dict[str, Any]]]:
+    def extract_tables(self, table_container: List[Dict[str, Any]], ref_container: List[Dict[str, Any]], text_chunks_dict: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Main method to classify a raw table and normalize its data.
+        Main method to extract raw tables.
         
         ... (docstring omitted for brevity)
         """
-        if not raw_data or len(raw_data) < 2:
-            return None, []
+        tables = {}
+        table_refs = {}
+        for idx, ref in enumerate(ref_container):
+            if 'tables' in ref["$ref"]:
+                table_id = ref.get('$ref').split('/')[-1]
+                title_id = ref_container[idx - 1].get('$ref').split('/')[-1]
+                table_title = text_chunks_dict.get(title_id, {}).get("content")
+                if table_title:
+                    table_title = table_title.replace(" ", "_").lower()
+                table_refs[table_id] = table_title or f"unknown_table_{table_id}"
 
-        raw_headers = raw_data[0]
-        # Clean headers to use them as keys in the row map
-        headers = [self._clean_header(h) for h in raw_headers]
-        table_type = self._classify_table(headers)
-        
-        if not table_type:
-            return None, []
-            
-        rows_data = raw_data[1:]
-        transactions = []
-        
-        for row in rows_data:
-            # Basic validation: Skip rows where most cells are empty or None
-            non_empty_cells = [cell for cell in row if cell and cell.strip()]
-            if len(non_empty_cells) < 2: 
-                continue # Skip if not enough data to be a valid transaction
+        for node in table_container:
+            table_data = node.get('data')
+
+            if table_data:
+                # Determine the type, falling back to 'text' if not specified
+                node_label = node.get('label', 'text')
                 
-            try:
-                if table_type == "capital_calls":
-                    transactions.append(self._parse_capital_call_row(headers, row))
-                elif table_type == "distributions":
-                    transactions.append(self._parse_distribution_row(headers, row))
-                elif table_type == "adjustments":
-                    transactions.append(self._parse_adjustment_row(headers, row))
+                # Use 'self_ref' for ID if available, otherwise use a counter
+                node_id = node.get('self_ref', f"unknown_{len(tables)}").split('/')[-1]
+                table_type = table_refs.get(node_id, f"unknown_table_{node_id}")
+
+                rows = table_data.get('grid')
+                if not rows or not isinstance(rows, list):
+                    return []
+                
+                # Extract headers (first row)
+                headers = [cell.get("text", "").strip() for cell in rows[0]]
+                data_rows = rows[1:]
+
+                table_rows = []
+                for row in data_rows:
+                    row_dict = {}
+                    for idx, cell in enumerate(row):
+                        key = headers[idx] if idx < len(headers) else f"col_{idx}"
+                        value = cell.get("text", "").strip()
+                        row_dict[key] = value
+
+                    if table_type == "capital_calls":
+                        parsed_row = self._parse_capital_call_row(row_dict)
+                    elif table_type == "distributions":
+                        parsed_row = self._parse_distribution_row(row_dict)
+                    elif table_type == "adjustments":
+                        parsed_row = self._parse_adjustment_row(row_dict)
+                    else:
+                        continue
                     
-            except ValueError as ve:
-                # Catching specific errors from cleaning (like bad date)
-                print(f"Validation Error processing row on page {page_number} for type {table_type}: {ve}")
-                continue
-            except Exception as e:
-                print(f"Unexpected Error processing row on page {page_number} for type {table_type}: {e}")
-                continue
+                    table_rows.append(parsed_row)
                 
-        return table_type, transactions
+                tables[table_type] = {
+                    "id": node_id,
+                    "type": node_label,
+                    "rows": table_rows
+                }
+
+        return tables   
 
     # --- Row Parsing Helper Methods (Slightly adjusted for robustness) ---
 
-    def _parse_capital_call_row(self, headers: List[str], row: List[str]) -> Dict[str, Any]:
-        """Parses and normalizes a single Capital Call row."""
-        row_map = dict(zip(headers, row))
-        
+    def _parse_capital_call_row(self, row_map: Dict[str, Any]) -> Dict[str, Any]:
+        """Parses and normalizes a single Capital Call row."""        
         # Required field validation
         if not row_map.get("Date") or not row_map.get("Amount"):
             raise ValueError("Missing required Date or Amount for Capital Call.")
@@ -164,10 +136,8 @@ class TableParser:
             "description": row_map.get("Description", "").strip().replace('\n', ' ')
         }
 
-    def _parse_distribution_row(self, headers: List[str], row: List[str]) -> Dict[str, Any]:
-        """Parses and normalizes a single Distribution row."""
-        row_map = dict(zip(headers, row))
-        
+    def _parse_distribution_row(self, row_map: Dict[str, Any]) -> Dict[str, Any]:
+        """Parses and normalizes a single Distribution row."""        
         # Required field validation
         if not row_map.get("Date") or not row_map.get("Amount"):
             raise ValueError("Missing required Date or Amount for Distribution.")
@@ -182,10 +152,8 @@ class TableParser:
             "description": row_map.get("Description", "").strip().replace('\n', ' ')
         }
 
-    def _parse_adjustment_row(self, headers: List[str], row: List[str]) -> Dict[str, Any]:
-        """Parses and normalizes a single Adjustment row."""
-        row_map = dict(zip(headers, row))
-        
+    def _parse_adjustment_row(self, row_map: Dict[str, Any]) -> Dict[str, Any]:
+        """Parses and normalizes a single Adjustment row."""        
         # Required field validation
         if not row_map.get("Date") or not row_map.get("Amount"):
             raise ValueError("Missing required Date or Amount for Adjustment.")

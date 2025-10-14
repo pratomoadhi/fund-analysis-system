@@ -16,7 +16,7 @@ from app.models.document import Document
 from app.models.fund import Fund
 from app.models.transaction import CapitalCall, Distribution, Adjustment
 from sqlalchemy.orm import Session
-import re
+from docling.document_converter import DocumentConverter
 import os
 import asyncio
 
@@ -26,6 +26,7 @@ class DocumentProcessor:
     def __init__(self, db: Session):
         self.table_parser = TableParser()
         self.vector_store = VectorStore(db=db) 
+        self.converter = DocumentConverter()
         self.db = db
     
     async def process_document(self, file_path: str, document_id: int, fund_id: int) -> Dict[str, Any]:
@@ -66,68 +67,79 @@ class DocumentProcessor:
         try:
             # --- Robust File Existence Check ---
             if not os.path.exists(file_path):
-                 raise FileNotFoundError(f"File not found at path: {file_path}")
+                raise FileNotFoundError(f"File not found at path: {file_path}")
             
             # --- 1. Robustly Open PDF and Extract Fund Data ---
             try:
                 # Catch specific errors related to file access or corruption during open
-                pdf = pdfplumber.open(file_path)
+                pdf = self.converter.convert(file_path)
             except Exception as e:
                 raise IOError(f"Failed to open or read PDF file: {e}")
-
-            with pdf:
-                # Basic check for empty PDF
-                if not pdf.pages:
-                    raise ValueError("PDF opened successfully but contains no pages.")
-                    
-                # Extract Fund Data (from first page)
-                first_page_text = pdf.pages[0].extract_text()
-                fund_data = self._extract_fund_data_from_text(first_page_text)
+            
+            # We rely on the result containing the document as a dictionary structure
+            if pdf and hasattr(pdf, 'document') and pdf.document:
                 
-                if not fund_data.get("name") or not fund_data.get("gp_name"):
-                    # NOTE: Simplified error handling
-                    fund = Fund(name=f"Unknown Fund {fund_id}", gp_name="Unknown GP", vintage_year=2024)
-                    print("Warning: Could not extract full Fund data. Using placeholders.")
+                # 1. Check if the document is already a dict
+                if isinstance(pdf.document, dict):
+                    doc = pdf.document
+                
+                # 2. Prioritize export_to_dict() based on the user's successful method
+                if hasattr(pdf.document, 'export_to_dict') and callable(pdf.document.export_to_dict):
+                    doc = pdf.document.export_to_dict()
+    
+                # Parse texts
+                if 'texts' not in doc:
+                    raise ValueError("'texts' section not found. Cannot chunk by all texts.")
+
+                text_container = doc['texts']
+                
+                # Determine how to iterate based on type
+                if isinstance(text_container, dict):
+                    # If it's a dictionary, iterate over the values (the actual text node objects)
+                    text_contents = text_container.values()
+                elif isinstance(text_container, list):
+                    # If it's a list, iterate over the elements (the actual text node objects)
+                    text_contents = text_container
                 else:
-                    fund = self._get_or_create_fund(fund_data)
-
-                document.fund_id = fund.id # Link document
-                processing_stats["fund_id"] = fund.id
+                    raise ValueError("'texts' section exists but is neither a dictionary nor a list. Cannot chunk by all texts.")
                 
-                # --- 2. Table Extraction ---
-                all_raw_tables = []
-                raw_text_pages = {}
-                for i, page in enumerate(pdf.pages):
-                    page_num = i + 1
-                    
-                    # Table extraction
-                    raw_tables = page.extract_tables(table_settings={}) 
-                    all_raw_tables.extend([
-                        {"page": page_num, "raw_data": t} for t in raw_tables
-                    ])
-                    
-                    # Text extraction
-                    raw_text_pages[page_num] = page.extract_text() or ""
+                text_chunks = self._chunk_text(text_contents)     
+                text_chunks_dict = {item["id"]: item for item in text_chunks}   
 
-            # 3. Classify and Parse Tables
-            parsed_data = self._classify_and_parse_tables(all_raw_tables)
-            
-            # 4. Store Transactions
-            processing_stats["calls_stored"] = self._store_capital_calls(fund.id, parsed_data.get("capital_calls", []))
-            processing_stats["distributions_stored"] = self._store_distributions(fund.id, parsed_data.get("distributions", []))
-            processing_stats["adjustments_stored"] = self._store_adjustments(fund.id, parsed_data.get("adjustments", []))
+                # Extract Fund Data
+                if 'groups' in doc and doc['groups']:
+                    fund_group = doc['groups'][0]
+                    fund_data = self._extract_fund_data_from_text(text_chunks_dict, fund_group)
+                
+                    if fund_data.get("name") and fund_data.get("gp_name"):
+                        fund = self._get_or_create_fund(fund_data)
+                        fund_id = fund.id
 
-            # 5. Text Chunking (Unstructured Data Path)
-            text_chunks = self._chunk_text(document.id, raw_text_pages)
-            
-            # 6. Store Chunks in Vector Database (Vector Storage)
-            chunks_stored = await self._store_chunks(document.id, fund.id, text_chunks)
-            processing_stats["chunks_stored"] = chunks_stored
+                # Extract tables
+                if 'tables' in doc and isinstance(doc['tables'], list):
+                    # Parse tables
+                    tables = self.table_parser.extract_tables(doc['tables'], doc['body']['children'], text_chunks_dict)
+
+                    # Store tables
+                    processing_stats["calls_stored"] = self._store_capital_calls(fund_id, tables.get("capital_calls", {}).get("rows", []))
+                    processing_stats["distributions_stored"] = self._store_distributions(fund_id, tables.get("distributions", {}).get("rows", []))
+                    processing_stats["adjustments_stored"] = self._store_adjustments(fund_id, tables.get("adjustments", {}).get("rows", []))
+
+                document.fund_id = fund_id # Link document
+                processing_stats["fund_id"] = fund_id
+                
+                # Store chunks            
+                chunks_stored = await self._store_chunks(document.id, fund_id, text_chunks)
+                processing_stats["chunks_stored"] = chunks_stored     
+
+            else:
+                raise ValueError("Conversion succeeded, but the resulting document object was empty.")
             
             # Final status update
             self.db.commit() # Commit all changes from this function
             processing_stats["status"] = "completed"
             processing_stats["message"] = "Document processed, transactions and vectors stored."
+            print(processing_stats)
             return processing_stats
             
         except (IOError, ValueError, FileNotFoundError, Exception) as e:
@@ -139,21 +151,31 @@ class DocumentProcessor:
             return processing_stats
             
     # --- Helper Methods for Fund Extraction (Unchanged from previous response) ---
-    def _extract_fund_data_from_text(self, text: str) -> Dict[str, Any]:
+
+    def _extract_fund_data_from_text(self, text_chunks_dict: Dict[str, Any], fund_group: Dict[str, Any]) -> Dict[str, Any]:
         """Utility to extract key fund data from the report text."""
-        data = {}
-        match = re.search(r"Fund Name:\s*([^\n]+)", text)
-        data["name"] = match.group(1).strip() if match else None
-        match = re.search(r"GP:\s*([^\n]+)", text)
-        data["gp_name"] = match.group(1).strip() if match else None
-        match = re.search(r"Vintage Year:\s*(\d{4})", text)
-        data["vintage_year"] = int(match.group(1)) if match else None
-        match = re.search(r"Fund Size:\s*(\$[^ \n]+)", text)
-        if match:
-             data["fund_size_str"] = match.group(1).strip().replace("$", "").replace(",", "")
-        match = re.search(r"Report Date:\s*([^\n]+)", text)
-        data["report_date_str"] = match.group(1).strip() if match else None
-        return data
+
+        transformed = {} 
+        raw_data = []
+        if 'children' in fund_group and fund_group['children']:
+            for item in fund_group['children']:
+                node_id = item["$ref"].split('/')[-1]
+                raw_data.append(text_chunks_dict.get(node_id, {"content": ""}))
+
+        if raw_data:
+            raw_fund_data = {
+                raw_data[i]["content"].rstrip(":"): raw_data[i + 1]["content"]
+                for i in range(0, len(raw_data) - 1, 2)
+            }
+
+            transformed = {
+                "name": raw_fund_data.get("Fund Name"),
+                "gp_name": raw_fund_data.get("GP"),
+                "fund_type": raw_fund_data.get("Fund Type"),
+                "vintage_year": int(raw_fund_data.get("Vintage Year") or 2025)
+            }
+
+        return transformed
 
     def _get_or_create_fund(self, fund_data: Dict[str, Any]) -> Fund:
         """Checks for existing fund or creates a new one."""
@@ -175,35 +197,7 @@ class DocumentProcessor:
         self.db.refresh(new_fund)
         return new_fund
 
-    # --- Table Classification and Storage Methods ---
-
-    def _classify_and_parse_tables(self, raw_tables: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-        """Uses the TableParser to classify and structure raw table data."""
-        
-        parsed_data = {
-            "capital_calls": [],
-            "distributions": [],
-            "adjustments": []
-        }
-        
-        for raw_table_obj in raw_tables:
-            table_data = raw_table_obj["raw_data"]
-            page_num = raw_table_obj["page"]
-            
-            try:
-                table_type, transactions = self.table_parser.parse_table(
-                    table_data, 
-                    page_number=page_num
-                )
-                
-                if table_type and table_type in parsed_data:
-                    parsed_data[table_type].extend(transactions)
-                    
-            except Exception as e:
-                # Log the error for a specific table
-                print(f"Error parsing table on page {page_num}: {e}")
-                
-        return parsed_data
+    # --- Table Storage Methods ---
 
     def _store_capital_calls(self, fund_id: int, calls_data: List[Dict[str, Any]]) -> int:
         """Stores capital call records in the database."""
@@ -252,54 +246,43 @@ class DocumentProcessor:
         
         self.db.add_all(new_adjustments)
         return len(new_adjustments)
-    
-    def _chunk_text(self, document_id: int, raw_text_pages: Dict[int, str]) -> List[Dict[str, Any]]:
+        
+    # --- Text Chunking and Storage Methods ---
+
+    def _chunk_text(self, text_contents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Chunks raw text into small pieces suitable for embedding, using a simple
-        paragraph-splitting strategy while respecting a maximum chunk size.
+        Chunk text content for vector storage
+        
+        TODO: Implement intelligent text chunking
+        - Split text into semantic chunks
+        - Maintain context overlap
+        - Preserve sentence boundaries
+        - Add metadata to each chunk
         
         Args:
-            document_id: ID of the source document.
-            raw_text_pages: Dictionary mapping page number (int) to raw text (str).
+            text_content: List of text content with metadata
             
         Returns:
-            List of text chunks with metadata (content, metadata: {document_id, page}).
+            List of text chunks with metadata
         """
         chunks = []
-        max_chunk_size = 500 # Define a reasonable max size for embeddings
-        
-        for page_num, text_content in raw_text_pages.items():
-            # 1. Split text into paragraphs based on one or more newlines
-            paragraphs = re.split(r'\n\s*\n', text_content)
-            current_chunk = ""
-            
-            for p in paragraphs:
-                p = p.strip()
-                if not p: 
-                    continue
 
-                # Check if adding the current paragraph exceeds the max size
-                # We account for 2 characters for the separator ("\n\n")
-                if len(current_chunk) + len(p) + 2 <= max_chunk_size:
-                    current_chunk += p + "\n\n"
-                else:
-                    # If the current chunk is not empty, save it
-                    if current_chunk:
-                        chunks.append({
-                            "content": current_chunk.strip(),
-                            # Add basic metadata including the page number
-                            "metadata": {"document_id": document_id, "page": page_num}
-                        })
-                    # Start a new chunk with the current paragraph
-                    current_chunk = p + "\n\n"
-            
-            # Save any remaining content in the current chunk after the page loop finishes
-            if current_chunk:
+        for node in text_contents:
+            text_content = node.get('text', '').strip()
+
+            if text_content:
+                # Determine the type, falling back to 'text' if not specified
+                node_label = node.get('label', 'text')
+                
+                # Use 'self_ref' for ID if available, otherwise use a counter
+                node_id = node.get('self_ref', f"unknown_{len(chunks)}").split('/')[-1]
+                
                 chunks.append({
-                    "content": current_chunk.strip(),
-                    "metadata": {"document_id": document_id, "page": page_num}
+                    "content": text_content,
+                    "id": node_id,
+                    "type": node_label
                 })
-        
+
         return chunks
 
     async def _store_chunks(self, document_id: int, fund_id: int, text_chunks: List[Dict[str, Any]]) -> int:
@@ -314,7 +297,8 @@ class DocumentProcessor:
             metadata = {
                 "document_id": document_id,
                 "fund_id": fund_id,
-                **chunk["metadata"] # includes page number
+                "chunk_id": chunk["id"],
+                "chunk_type": chunk["type"]
             }
             # Schedule the add_document call (which calls the Gemini API)
             tasks.append(self.vector_store.add_document(chunk["content"], metadata))
