@@ -69,11 +69,11 @@ This repository contains a **project scaffold** to help you get started quickly:
 The following **core functionalities are NOT implemented** and need to be built by you:
 
 #### 1. Document Processing Pipeline (Phase 2) - **CRITICAL**
-- [v] PDF parsing with pdfplumber (integrate and test)
-- [v] Table detection and extraction logic
-- [v] Intelligent table classification (capital calls vs distributions vs adjustments)
-- [v] Data validation and cleaning
-- [v] Error handling for malformed PDFs
+- [ ] PDF parsing with pdfplumber (integrate and test)
+- [ ] Table detection and extraction logic
+- [ ] Intelligent table classification (capital calls vs distributions vs adjustments)
+- [ ] Data validation and cleaning
+- [ ] Error handling for malformed PDFs
 - [ ] Background task processing (Celery integration)
 
 **Files to implement:**
@@ -81,11 +81,11 @@ The following **core functionalities are NOT implemented** and need to be built 
 - `backend/app/services/table_parser.py` (needs implementation)
 
 #### 2. Vector Store & RAG System (Phase 3) - **CRITICAL**
-- [v] Text chunking strategy implementation
+- [ ] Text chunking strategy implementation
 - [ ] embedding generation
 - [ ] FAISS index creation and management
-- [v] Semantic search implementation
-- [v] Context retrieval for LLM
+- [ ] Semantic search implementation
+- [ ] Context retrieval for LLM
 - [ ] Prompt engineering for accurate responses
 
 **Files to implement:**
@@ -95,12 +95,12 @@ The following **core functionalities are NOT implemented** and need to be built 
 **Note**: This project uses **pgvector** instead of FAISS. pgvector is a PostgreSQL extension that stores vectors directly in your database, eliminating the need for a separate vector database.
 
 #### 3. Query Engine & Intent Classification (Phase 3-4) - **CRITICAL**
-- [v] Intent classifier (calculation vs definition vs retrieval)
-- [v] Query router logic
-- [v] LLM integration 
-- [v] Response formatting
-- [v] Source citation
-- [v] Conversation context management
+- [ ] Intent classifier (calculation vs definition vs retrieval)
+- [ ] Query router logic
+- [ ] LLM integration 
+- [ ] Response formatting
+- [ ] Source citation
+- [ ] Conversation context management
 
 **Files to implement:**
 - `backend/app/services/query_engine.py` (needs implementation)
@@ -241,31 +241,31 @@ CREATE TABLE documents (
 ## Required Features (Phase 1-4)
 
 ### Phase 1: Core Infrastructure
-- [v] Docker setup with PostgreSQL, Redis
-- [v] FastAPI backend with CRUD endpoints
-- [v] Next.js frontend with basic layout
-- [v] Database schema implementation
-- [v] Environment configuration
+- [ ] Docker setup with PostgreSQL, Redis
+- [ ] FastAPI backend with CRUD endpoints
+- [ ] Next.js frontend with basic layout
+- [ ] Database schema implementation
+- [ ] Environment configuration
 
 ### Phase 2: Document Processing
-- [v] File upload API endpoint
-- [v] Docling integration for PDF parsing
-- [v] Table extraction and SQL storage
-- [v] Text chunking and embedding
-- [v] Parsing status tracking
+- [ ] File upload API endpoint
+- [ ] Docling integration for PDF parsing
+- [ ] Table extraction and SQL storage
+- [ ] Text chunking and embedding
+- [ ] Parsing status tracking
 
 ### Phase 3: Vector Store & RAG
-- [v] pgvector setup (PostgreSQL extension)
-- [v] Embedding generation (OpenAI/local)
-- [v] Similarity search using pgvector operators
-- [v] LangChain integration
-- [v] Basic chat interface
+- [ ] pgvector setup (PostgreSQL extension)
+- [ ] Embedding generation (OpenAI/local)
+- [ ] Similarity search using pgvector operators
+- [ ] LangChain integration
+- [ ] Basic chat interface
 
 ### Phase 4: Fund Metrics Calculation
-- [v] DPI calculation function
-- [v] IRR calculation function
-- [v] Metrics API endpoints
-- [v] Query engine integration
+- [ ] DPI calculation function
+- [ ] IRR calculation function
+- [ ] Metrics API endpoints
+- [ ] Query engine integration
 
 ---
 
@@ -501,6 +501,52 @@ curl -X POST "http://localhost:8000/api/chat/query" \
     "fund_id": 1
   }'
 ```
+
+---
+
+## Screenshots
+
+### Upload Fund Document
+
+1. Select file and wait for uploading process
+
+![Uploading](screenshots/001-document-upload.png)
+
+2. Wait for document processing
+
+![Processing](screenshots/002-document-process.png)
+
+3. Succesfully uploaded and processed document
+
+![Success](screenshots/003-document-success.png)
+
+### Fund Dashboard
+
+1. Display list of funds and their performance summary 
+
+![Fund Portofolio](screenshots/004-fund-portofolio.png)
+
+2. Display detailed fund performance report
+
+![Fund Performance Report](screenshots/005-fund-detail.png)
+
+### Chat
+
+1. Definitions 
+
+![Definitions](screenshots/006-chat-definitions.png)
+
+2. Calculations
+
+![Calculations](screenshots/007-chat-calculations.png)
+
+3. Data Retrieval
+
+![Data Retrieval](screenshots/008-chat-retrieval.png)
+
+4. Complex Queries
+
+![Complex Queries](screenshots/009-chat-complex.png)
 
 ---
 
@@ -754,6 +800,8 @@ pip install langchain-google-genai
 3. **Update .env**
 ```bash
 GOOGLE_API_KEY=your-gemini-api-key
+GEMINI_GENERATION_MODEL=gemini-2.5-flash
+GEMINI_EMBEDDING_MODEL=text-embedding-004
 LLM_PROVIDER=gemini
 ```
 
@@ -762,7 +810,7 @@ LLM_PROVIDER=gemini
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-pro",
+    model=s.getenv("GEMINI_GENERATION_MODEL"),
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 ```

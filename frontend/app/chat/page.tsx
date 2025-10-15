@@ -176,6 +176,8 @@ function MessageBubble({ message }: { message: Message }) {
                 let displayValue: string
                 if (typeof value === 'number' && key.includes('irr')) {
                   displayValue = `${value.toFixed(2)}%`
+                } else if (typeof value === 'number' && key.includes('dpi')) {
+                  displayValue = `${value.toFixed(2)}`
                 } else if (typeof value === 'number') {
                   displayValue = formatCurrency(value)
                 } else {
