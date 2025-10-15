@@ -3,7 +3,7 @@ from datetime import datetime
 
 class TableParser:
     """
-    Analyzes raw tables extracted by pdfplumber, classifies them (Capital Calls, 
+    Analyzes raw tables extracted by docling, classifies them (Capital Calls, 
     Distributions, Adjustments), and cleans/normalizes the transaction data.
     """
 
@@ -58,7 +58,12 @@ class TableParser:
         # If no format matched, raise a definitive error
         raise ValueError(f"Date string '{date_str}' does not match any expected format.")
     
-    def extract_tables(self, table_container: List[Dict[str, Any]], ref_container: List[Dict[str, Any]], text_chunks_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_tables(
+            self, 
+            table_container: List[Dict[str, Any]], 
+            ref_container: List[Dict[str, Any]], 
+            text_chunks_dict: Dict[str, Any]
+        ) -> Dict[str, Any]:
         """
         Main method to extract raw tables.
         
@@ -71,9 +76,13 @@ class TableParser:
                 table_id = ref.get('$ref').split('/')[-1]
                 title_id = ref_container[idx - 1].get('$ref').split('/')[-1]
                 table_title = text_chunks_dict.get(title_id, {}).get("content")
+                tabel_type = None
                 if table_title:
-                    table_title = table_title.replace(" ", "_").lower()
-                table_refs[table_id] = table_title or f"unknown_table_{table_id}"
+                    tabel_type = table_title.replace(" ", "_").lower()
+                table_refs[table_id] = {
+                    "title": table_title,
+                    "type": tabel_type
+                }
 
         for node in table_container:
             table_data = node.get('data')
@@ -84,7 +93,8 @@ class TableParser:
                 
                 # Use 'self_ref' for ID if available, otherwise use a counter
                 node_id = node.get('self_ref', f"unknown_{len(tables)}").split('/')[-1]
-                table_type = table_refs.get(node_id, f"unknown_table_{node_id}")
+                table_title = table_refs.get(node_id, {}).get("title", f"Unknown Table {node_id}")
+                table_type = table_refs.get(node_id, {}).get("type", f"unknown_table_{node_id}")
 
                 rows = table_data.get('grid')
                 if not rows or not isinstance(rows, list):
@@ -95,6 +105,7 @@ class TableParser:
                 data_rows = rows[1:]
 
                 table_rows = []
+                table_contents = [table_title, "", ",".join(headers)]
                 for row in data_rows:
                     row_dict = {}
                     for idx, cell in enumerate(row):
@@ -112,11 +123,13 @@ class TableParser:
                         continue
                     
                     table_rows.append(parsed_row)
+                    table_contents.append(",".join(row_dict.values()))
                 
                 tables[table_type] = {
                     "id": node_id,
                     "type": node_label,
-                    "rows": table_rows
+                    "rows": table_rows,
+                    "content": "\n".join(table_contents)
                 }
 
         return tables   
@@ -170,7 +183,7 @@ class TableParser:
         return {
             "date": self._clean_date(row_map.get("Date")),
             "type": adj_type,
-            "amount": self._clean_amount(row_map.get("Amount")),
+            "amount": -float(self._clean_amount(row_map.get("Amount"))),
             "is_contribution_adjustment": is_contribution_adjustment,
             "category": category,
             "description": row_map.get("Description", "").strip().replace('\n', ' ')

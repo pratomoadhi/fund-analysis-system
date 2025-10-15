@@ -1,15 +1,8 @@
 """
-Document processing service using pdfplumber
-
-TODO: Implement the document processing pipeline
-- Extract tables from PDF using pdfplumber
-- Classify tables (capital calls, distributions, adjustments)
-- Extract and chunk text for vector storage
-- Handle errors and edge cases
+Document processing service using docling.
 """
 from typing import Dict, List, Any
 from datetime import datetime
-import pdfplumber
 from app.services.table_parser import TableParser
 from app.services.vector_store import VectorStore
 from app.models.document import Document
@@ -33,14 +26,6 @@ class DocumentProcessor:
         """
         Process a PDF document
         
-        TODO: Implement this method
-        - Open PDF with pdfplumber
-        - Extract tables from each page
-        - Parse and classify tables using TableParser
-        - Extract text and create chunks
-        - Store chunks in vector database
-        - Return processing statistics
-        
         Args:
             file_path: Path to the PDF file
             document_id: Database document ID
@@ -49,7 +34,6 @@ class DocumentProcessor:
         Returns:
             Processing result with statistics
         """
-        # TODO: Implement PDF processing logic
         document = self.db.query(Document).filter(Document.id == document_id).first()
         
         processing_stats = {
@@ -108,6 +92,8 @@ class DocumentProcessor:
 
                 # Extract Fund Data
                 if 'groups' in doc and doc['groups']:
+
+                    # Parse Fund data
                     fund_group = doc['groups'][0]
                     fund_data = self._extract_fund_data_from_text(text_chunks_dict, fund_group)
                 
@@ -117,19 +103,28 @@ class DocumentProcessor:
                         document.fund_id = fund_id # Link document
                         processing_stats["fund_id"] = fund_id
 
+                    # Chunk groups
+                    group_chunks = self._chunk_group(doc['groups'], text_chunks_dict)
+                    chunks_stored = await self._store_chunks(document.id, fund_id, group_chunks)
+                    processing_stats["chunks_stored"] += chunks_stored
+
                 # Extract tables
                 if 'tables' in doc and isinstance(doc['tables'], list):
                     # Parse tables
                     tables = self.table_parser.extract_tables(doc['tables'], doc['body']['children'], text_chunks_dict)
+
+                    # Chunk tables
+                    chunks_stored = await self._store_chunks(document.id, fund_id, tables.values())
+                    processing_stats["chunks_stored"] += chunks_stored
 
                     # Store tables
                     processing_stats["calls_stored"] = self._store_capital_calls(fund_id, tables.get("capital_calls", {}).get("rows", []))
                     processing_stats["distributions_stored"] = self._store_distributions(fund_id, tables.get("distributions", {}).get("rows", []))
                     processing_stats["adjustments_stored"] = self._store_adjustments(fund_id, tables.get("adjustments", {}).get("rows", []))
                 
-                # Store chunks            
-                chunks_stored = await self._store_chunks(document.id, fund_id, text_chunks)
-                processing_stats["chunks_stored"] = chunks_stored     
+                # # Store chunks            
+                # chunks_stored = await self._store_chunks(document.id, fund_id, text_chunks)
+                # processing_stats["chunks_stored"] = chunks_stored     
 
             else:
                 raise ValueError("Conversion succeeded, but the resulting document object was empty.")
@@ -138,7 +133,6 @@ class DocumentProcessor:
             self.db.commit() # Commit all changes from this function
             processing_stats["status"] = "completed"
             processing_stats["message"] = "Document processed, transactions and vectors stored."
-            print(processing_stats)
             return processing_stats
             
         except (IOError, ValueError, FileNotFoundError, Exception) as e:
@@ -252,12 +246,6 @@ class DocumentProcessor:
         """
         Chunk text content for vector storage
         
-        TODO: Implement intelligent text chunking
-        - Split text into semantic chunks
-        - Maintain context overlap
-        - Preserve sentence boundaries
-        - Add metadata to each chunk
-        
         Args:
             text_content: List of text content with metadata
             
@@ -283,6 +271,40 @@ class DocumentProcessor:
                 })
 
         return chunks
+    
+    def _chunk_group(self, group_contents: List[Dict[str, Any]], text_contents: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Chunk group content for vector storage
+        
+        Args:
+            group_contents: List of group content with metadata
+            text_contents: Dictionary of text contents by ID
+            
+        Returns:
+            List of group chunks with metadata
+        """
+        group_chunks = []
+
+        for node in group_contents:
+            group_id = node.get('self_ref', f"unknown_{len(group_chunks)}").split('/')[-1]
+            # Determine the type, falling back to 'text' if not specified
+            node_label = node.get('label', 'text')
+            children = node.get('children')
+
+            text_chunks = []
+            if children and isinstance(children, list):
+                for text_ref in children:
+                    ref_id = text_ref.get('$ref', f"unknown_{len(text_chunks)}").split('/')[-1]
+                    text_content = text_contents.get(ref_id, {}).get('content', '').strip()
+                    text_chunks.append(text_content)
+
+            group_chunks.append({
+                "id": group_id,
+                "type": node_label,
+                "content": "\n".join(text_chunks)
+            })
+
+        return group_chunks
 
     async def _store_chunks(self, document_id: int, fund_id: int, text_chunks: List[Dict[str, Any]]) -> int:
         """

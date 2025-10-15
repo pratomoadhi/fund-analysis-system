@@ -1,11 +1,5 @@
 """
 Vector store service using pgvector (PostgreSQL extension)
-
-TODO: Implement vector storage using pgvector
-- Create embeddings table in PostgreSQL
-- Store document chunks with vector embeddings
-- Implement similarity search using pgvector operators
-- Handle metadata filtering
 """
 from typing import List, Dict, Any, Optional
 import numpy as np
@@ -103,11 +97,8 @@ class VectorStore:
             TEMP_DEV_API_KEY = settings.GOOGLE_API_KEY 
             
             if not TEMP_DEV_API_KEY:
-                print("--- ERROR: GOOGLE_API_KEY is missing for Gemini embedding. ---")
+                print("Error: GOOGLE_API_KEY is missing for Gemini embedding")
                 raise RuntimeError("Missing Gemini API Key.")
-
-            # --- CRITICAL FIX: Removed the buggy line that returned np.zeros() ---
-            print("DEBUG: Using Gemini API for query embedding.")
 
             # 2. Use the key as a query parameter (the simple method)
             api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{config['model_name']}:embedContent?key={TEMP_DEV_API_KEY}"
